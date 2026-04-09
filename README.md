@@ -1,0 +1,3 @@
+## Work in progress
+
+This repo is aimed at working with NWB files using Julia. Everything is verymuch under construction right now....bare with me while I develop my first Julia package...
