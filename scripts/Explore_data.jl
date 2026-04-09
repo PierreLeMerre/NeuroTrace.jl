@@ -6,10 +6,10 @@
 
 # %% ── Configuration (edit before running) ──────────────────────────────────
 
-NWB_FILE   = "/Volumes/T7/NWB_Joana/NWB/999770_20251111_probe01.nwb"   # ← set this
+NWB_FILE   = "/Volumes/T7/NWB_Alicante/NWB/SC19_20250529.nwb"   # ← set this
 
 TIME_IN    = 000.0        # session start to display (s)
-TIME_OUT   = 100.0      # session end   to display (s)
+TIME_OUT   = 1400.0      # session end   to display (s)
 BIN_SZ     = 0.10       # population firing-rate bin width (s)
 
 # Events to overlay on the raster.  Add as many as you need.
