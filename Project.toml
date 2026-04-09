@@ -1,0 +1,30 @@
+name = "NeuroTrace"
+uuid = "af4ea4cb-87da-4371-b32e-eabbd0596dfe"
+authors = ["Pierre <pierrepierrepierre.lemerre@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+# HDF5.jl: NWB files are HDF5 under the hood. This is the most reliable
+# and actively maintained way to read NWB files in Julia.
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+
+# CairoMakie: vector-graphics backend for Makie. Ideal for scripts
+# (no display required) and produces publication-quality PNG/SVG/PDF.
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+
+# Statistics from the standard library — no UUID needed, always available.
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b1"
+
+[compat]
+# Pin the Julia version range your package supports.
+# "1.9" means >=1.9, <2. Adjust upward as Julia releases new versions.
+julia   = "1.9"
+HDF5    = "0.17"
+CairoMakie = "0.11, 0.12"
+
+[extras]
+# Test-only dependencies go here so they don't pollute user environments.
+Test = "8dfed614-e22c-358f-9f0b-e7d4f03a5885"
+
+[targets]
+test = ["Test"]
