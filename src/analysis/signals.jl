@@ -6,11 +6,13 @@ Signal-processing and event-analysis utilities for neural data.
 module Analysis
 
 using Statistics
+using ImageFiltering: imfilter, Kernel
 using ..IO: SpikeUnits, ElectricalSeries
 
 export firing_rate, bin_spikes,
        find_spks_in_window, simple_raster, simple_raster_units,
-       simple_PSTH
+       simple_PSTH,
+       population_psth, zscore_psth, peak_sort, smooth_psth
 
 # ============================================================================
 # Internal helpers
@@ -204,6 +206,139 @@ function simple_PSTH(spk_times::AbstractVector{<:Real},
     bin_centers = edges[1:end-1] .+ bin_size / 2
 
     return rate, bin_centers
+end
+
+# ============================================================================
+# Population-level analysis
+# ============================================================================
+
+"""
+    population_psth(spk_times, event_times, bin_size, win_start, win_stop)
+        -> (mat::Matrix{Float64}, bin_centers::Vector{Float64})
+
+Compute a PSTH for every unit and stack the results into a
+`(n_units × n_bins)` matrix.  Each row is one unit's mean firing rate
+(Hz) aligned to `event_times`.
+
+Thin wrapper around `simple_PSTH` — the real work happens there.
+
+# Example
+```julia
+mat, t = population_psth(spk_sorted, trial_onsets, 0.025, -0.5, 1.5)
+```
+"""
+function population_psth(spk_times::AbstractVector,
+                         event_times::AbstractVector{<:Real},
+                         bin_size::Real,
+                         win_start::Real,
+                         win_stop::Real)
+
+    # Compute the first unit to learn n_bins, then pre-allocate
+    rate1, bin_centers = simple_PSTH(spk_times[1], event_times,
+                                     bin_size, win_start, win_stop)
+    n_units = length(spk_times)
+    n_bins  = length(bin_centers)
+    mat     = zeros(Float64, n_units, n_bins)
+    mat[1, :] = rate1
+
+    for u in 2:n_units
+        rate, _ = simple_PSTH(spk_times[u], event_times,
+                               bin_size, win_start, win_stop)
+        mat[u, :] = rate
+    end
+    return mat, bin_centers
+end
+
+"""
+    zscore_psth(mat, bin_centers; baseline_stop = 0.0)
+        -> Matrix{Float64}
+
+Z-score each row of a PSTH matrix against its own pre-event baseline.
+
+The baseline is defined as all bins where `bin_centers < baseline_stop`
+(default: everything before the event at t = 0).  For each unit:
+  - subtract the baseline mean
+  - divide by the baseline standard deviation
+
+Units with a baseline std below `eps()` (silent or near-silent cells)
+are given std = 1 so they produce all-zero rows rather than NaN.
+
+# Example
+```julia
+z = zscore_psth(mat, t)               # baseline = all t < 0
+z = zscore_psth(mat, t; baseline_stop = -0.1)  # exclude 100 ms before event
+```
+"""
+function zscore_psth(mat::Matrix{Float64},
+                     bin_centers::Vector{Float64};
+                     baseline_stop::Real = 0.0)
+
+    baseline_mask = bin_centers .< baseline_stop
+    any(baseline_mask) ||
+        error("No baseline bins found before t = $baseline_stop. " *
+              "Check win_start and baseline_stop.")
+
+    bl_mean = mean(mat[:, baseline_mask], dims=2)   # (n_units × 1)
+    bl_std  = std(mat[:,  baseline_mask], dims=2)
+
+    # Protect against division by zero for silent cells
+    bl_std[bl_std .< eps(Float64)] .= 1.0
+
+    return (mat .- bl_mean) ./ bl_std
+end
+
+"""
+    peak_sort(z_mat, bin_centers; post_event_start = 0.0) -> Vector{Int}
+
+Return a permutation vector that sorts units by their **peak response time**
+in the post-event window (`bin_centers >= post_event_start`).
+
+Applied to the z-scored matrix so peak detection is not biased by
+differences in baseline firing rate across units.
+
+The result can be passed directly as a row index:
+```julia
+idx = peak_sort(z_mat, t)
+heatmap(t, 1:n_units, z_mat[idx, :])
+```
+"""
+function peak_sort(z_mat::Matrix{Float64},
+                   bin_centers::Vector{Float64};
+                   post_event_start::Real = 0.0)
+
+    post_mask = bin_centers .>= post_event_start
+    any(post_mask) ||
+        error("No post-event bins found at t >= $post_event_start.")
+
+    # argmax returns the *index within the masked slice* for each unit
+    peak_bin = [argmax(z_mat[u, post_mask]) for u in axes(z_mat, 1)]
+    return sortperm(peak_bin)
+end
+
+"""
+    smooth_psth(mat; σ = 1.0) -> Matrix{Float64}
+
+Apply a **1-D Gaussian smooth along the time axis** (columns) of a PSTH
+matrix, independently for each unit (row).
+
+`σ` is the kernel width in **bins** — so the actual time smoothing depends
+on your bin size: σ = 1 bin at 25 ms/bin ≈ 25 ms FWHM.
+Increase `σ` for noisier data or coarser smoothing.
+
+The Gaussian kernel is computed by `ImageFiltering.Kernel.gaussian`, which
+uses a truncated kernel of width ≈ 6σ and automatically handles edge padding.
+
+# Example
+```julia
+s_mat = smooth_psth(mat;   σ = 1.5)   # smooth raw Hz matrix
+s_z   = smooth_psth(z_mat; σ = 1.5)   # smooth z-scored matrix
+```
+"""
+function smooth_psth(mat::Matrix{Float64}; σ::Real = 1.0)
+    ker     = Kernel.gaussian((σ,))           # 1-D kernel, width in bins
+    newdata = [Float64.(imfilter(mat[u, :], ker)) for u in axes(mat, 1)]
+    # hcat stacks row-vectors as columns → (n_bins × n_units); ' transposes back
+    return collect(hcat(newdata...)')
 end
 
 # ============================================================================

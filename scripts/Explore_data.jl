@@ -9,7 +9,7 @@
 NWB_FILE   = "/Volumes/T7/NWB_Alicante/NWB/SC19_20250529.nwb"   # ← set this
 
 TIME_IN    = 000.0        # session start to display (s)
-TIME_OUT   = 1400.0      # session end   to display (s)
+TIME_OUT   = 100.0      # session end   to display (s)
 BIN_SZ     = 0.10       # population firing-rate bin width (s)
 
 # Events to overlay on the raster.  Add as many as you need.
@@ -208,58 +208,4 @@ plt = plot(event_plt, sc, rate_plt;
 display(plt)
 
 # %% ── (Optional) Save figure ────────────────────────────────────────────────
-# Uncomment to save:
 # savefig(plt, joinpath(@__DIR__, "session_overview.png"))
-
-# ============================================================================
-#  Peri-event raster + PSTH  (single unit)
-#  Run this cell after setting UNIT_IDX and confirming tstart is loaded.
-# ============================================================================
-
-# %% ── Peri-event: configuration ─────────────────────────────────────────────
-
-UNIT_IDX   = 1       # which unit to inspect (index in spk_sorted)
-WIN_START  = -0.5    # window start re event (s)
-WIN_STOP   =  1.5    # window stop  re event (s)
-PSTH_BIN   =  0.02   # PSTH bin size (s)
-
-# %% ── Peri-event: compute ───────────────────────────────────────────────────
-
-isempty(tstart) && error("No events loaded — check EVENT_PATH.")
-
-Xr, Yr = simple_raster(spk_sorted[UNIT_IDX], tstart, WIN_START, WIN_STOP)
-Yr     = Int.(Yr)
-
-rate, t_psth = simple_PSTH(spk_sorted[UNIT_IDX], tstart,
-                            PSTH_BIN, WIN_START, WIN_STOP)
-
-unit_label = "unit $(sort_idx[UNIT_IDX])  [$(ylab[UNIT_IDX])]"
-
-# %% ── Peri-event: plot ───────────────────────────────────────────────────────
-
-rast_plt = scatter(Xr, Yr;
-    mc               = :black,
-    ms               = 1.5,
-    markerstrokewidth = 0,
-    xlims            = (WIN_START, WIN_STOP),
-    ylims            = (0, length(tstart) + 1),
-    ylabel           = "trial",
-    legend           = false,
-    title            = unit_label)
-vline!(rast_plt, [0.0]; color=:red, lw=1, ls=:dash, label=false)
-
-psth_plt = plot(t_psth, rate;
-    color  = :black,
-    lw     = 1.2,
-    xlims  = (WIN_START, WIN_STOP),
-    xlabel = "time re event (s)",
-    ylabel = "spikes/s",
-    legend = false)
-vline!(psth_plt, [0.0]; color=:red, lw=1, ls=:dash, label=false)
-
-peri_plt = plot(rast_plt, psth_plt;
-    layout = grid(2, 1; heights=[0.70, 0.30]),
-    size   = (700, 600),
-    link   = :x)
-
-display(peri_plt)
