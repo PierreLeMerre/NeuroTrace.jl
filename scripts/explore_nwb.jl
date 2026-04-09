@@ -2,7 +2,7 @@
 explore_nwb.jl — Standalone NWB file explorer.
 
 This script does NOT require the NeuroTrace package to be installed.
-It uses only HDF5.jl and CairoMakie.jl directly, so you can run it
+It uses only HDF5.jl and Plots.jl (GR backend) directly, so you can run it
 immediately from the Julia REPL or command line while the package is
 still under development.
 
@@ -29,8 +29,9 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 Pkg.instantiate()   # download any missing packages (runs only once)
 
 using HDF5
-using CairoMakie
+using Plots
 using Statistics
+gr()   # activate GR backend (default, but explicit is clearer)
 
 # ---------------------------------------------------------------------------
 # Utility: print HDF5 tree
@@ -122,7 +123,7 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    plot_raster(ids, spike_times; t_window = nothing) -> Figure
+    plot_raster(ids, spike_times; t_window = nothing) -> Plots.Plot
 
 Draw a spike raster plot. Each row is a neuron; each tick is a spike.
 
@@ -139,48 +140,47 @@ function plot_raster(ids, spike_times; t_window = nothing)
                       (minimum(all_spikes), maximum(all_spikes)) : t_window
     n_units = length(ids)
 
-    fig = Figure(size = (900, clamp(300 + 22 * n_units, 400, 1200)))
-    ax  = Axis(fig[1, 1];
-               title     = "Spike Raster  ($n_units units, " *
-                           "$(round(t_stop - t_start; digits=1)) s window)",
-               xlabel    = "Time (s)",
-               ylabel    = "Unit",
-               yticks    = (1:n_units, string.(ids)),
-               yreversed = false)
-
-    TICK_H = 0.72   # fraction of row height
+    # Build one NaN-separated polyline for ALL spikes across ALL units.
+    # A single series renders far faster than one series per unit.
+    TICK_H = 0.36
+    xs = Float64[]
+    ys = Float64[]
     for (row, (id, spikes)) in enumerate(zip(ids, spike_times))
         in_win = filter(t -> t_start ≤ t ≤ t_stop, spikes)
-        isempty(in_win) && continue
-
-        # Build a polyline with NaN separators so lines!() draws many
-        # disconnected segments in a single draw call (much faster than
-        # calling linesegments!() once per spike).
-        xs = Float64[]
-        ys = Float64[]
         for t in in_win
-            push!(xs, t, t, NaN)
-            push!(ys, row - TICK_H/2, row + TICK_H/2, NaN)
+            push!(xs, t,          t,          NaN)
+            push!(ys, row-TICK_H, row+TICK_H, NaN)
         end
-        lines!(ax, xs, ys; color = (:black, 0.85), linewidth = 0.9)
     end
 
-    xlims!(ax, t_start, t_stop)
-    ylims!(ax, 0.5, n_units + 0.5)
-    return fig
+    p = plot(xs, ys;
+             seriestype = :path,
+             color      = :black,
+             linewidth  = 0.8,
+             label      = false,
+             xlabel     = "Time (s)",
+             ylabel     = "Unit",
+             title      = "Spike Raster  ($n_units units, " *
+                          "$(round(t_stop - t_start; digits=1)) s)",
+             yticks     = (1:n_units, string.(ids)),
+             xlims      = (t_start, t_stop),
+             ylims      = (0.5, n_units + 0.5),
+             size       = (900, clamp(250 + 22*n_units, 350, 1100)),
+             legend     = false)
+    return p
 end
 
 """
     plot_trace(name, data, timestamps, unit_str;
                channel = 1, t_window = nothing,
-               max_points = 60_000) -> Figure
+               max_points = 60_000) -> Plots.Plot
 
 Plot a continuous voltage trace. Down-samples if necessary to keep the
 output file small and rendering fast (no visual loss at typical zoom levels).
 """
 function plot_trace(name, data, timestamps, unit_str;
-                    channel   = 1,
-                    t_window  = nothing,
+                    channel    = 1,
+                    t_window   = nothing,
                     max_points = 60_000)
 
     t_start, t_stop = isnothing(t_window) ?
@@ -199,13 +199,16 @@ function plot_trace(name, data, timestamps, unit_str;
     end
 
     duration = round(t_stop - t_start; digits = 2)
-    fig = Figure(size = (1000, 320))
-    ax  = Axis(fig[1, 1];
-               title  = "$(name)  [ch $(channel)]  — $(duration) s",
-               xlabel = "Time (s)",
-               ylabel = unit_str)
-    lines!(ax, ts_w, y_w; color = :steelblue, linewidth = 0.7)
-    return fig
+    p = plot(ts_w, y_w;
+             color     = :steelblue,
+             linewidth = 0.7,
+             label     = false,
+             xlabel    = "Time (s)",
+             ylabel    = unit_str,
+             title     = "$(name)  [ch $(channel)]  — $(duration) s",
+             size      = (1000, 300),
+             legend    = false)
+    return p
 end
 
 # ---------------------------------------------------------------------------
@@ -291,7 +294,7 @@ function explore(path::String;
     end  # h5open closes here
 
     if !isnothing(fig)
-        CairoMakie.save(output, fig; px_per_unit = 2)
+        savefig(fig, output)
         println("\n✓  Figure saved → $(abspath(output))")
     end
 

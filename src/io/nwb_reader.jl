@@ -12,7 +12,7 @@ module IO
 using HDF5
 using Statistics
 
-export load, NWBSession, SpikeUnits, ElectricalSeries
+export load, read_ragged, NWBSession, SpikeUnits, ElectricalSeries
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -77,6 +77,45 @@ end
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+"""
+    read_ragged(fid, data_key, index_key) -> Vector{Vector{Float64}}
+
+Read an NWB **ragged (variable-length) array** stored as two flat datasets:
+
+- `data_key`  — the concatenated values (e.g. `"units/spike_times"`).
+- `index_key` — cumulative end-indices, one per row (e.g. `"units/spike_times_index"`).
+
+NWB's ragged encoding packs variable-length rows into a single flat array to
+avoid HDF5 overhead. `index_key[i]` is the *exclusive* end of row `i`, so
+row `i` occupies `data[ index_key[i-1]+1 : index_key[i] ]`, with
+`index_key[0] = 0` by convention.
+
+Returns a `Vector{Vector{Float64}}` — one inner vector per row.
+
+# Why a utility?
+This pattern appears in every NWB file that stores ragged data:
+spike times, spike waveforms, electrode groups, trial-interval tables, etc.
+Centralising it here means the fix for the off-by-one is applied once.
+
+# Example
+```julia
+h5open("session.nwb", "r") do fid
+    spk_times = read_ragged(fid, "units/spike_times",
+                                  "units/spike_times_index")
+end
+```
+"""
+function read_ragged(fid,
+                     data_key::String,
+                     index_key::String)::Vector{Vector{Float64}}
+    flat = Float64.(read(fid[data_key]))
+    idx  = Int.(read(fid[index_key]))
+
+    # starts[i] = first element of row i in `flat` (1-based)
+    starts = [1; idx[1:end-1] .+ 1]
+    return [flat[starts[i]:idx[i]] for i in eachindex(idx)]
+end
 
 """
     load(path::String) -> NWBSession
@@ -144,17 +183,9 @@ function _read_units(grp::HDF5.Group)::SpikeUnits
         ids = Int.(read(grp["id"]))
     end
 
-    # Spike times are stored as:
-    #   spike_times          – flat concatenated array of all timestamps
-    #   spike_times_index    – cumulative end-indices per unit
+    # Spike times use NWB's ragged-array encoding — delegate to read_ragged.
     if haskey(grp, "spike_times") && haskey(grp, "spike_times_index")
-        flat   = Float64.(read(grp["spike_times"]))
-        idx    = Int.(read(grp["spike_times_index"]))
-
-        starts = vcat(1, idx[1:end-1] .+ 1)
-        for (s, e) in zip(starts, idx)
-            push!(spike_times, flat[s:e])
-        end
+        spike_times = read_ragged(grp, "spike_times", "spike_times_index")
     end
 
     # Ensure ids and spike_times are aligned

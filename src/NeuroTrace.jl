@@ -6,7 +6,7 @@ stored in NWB (Neurodata Without Borders) files.
 
 # Sub-modules
 - `NeuroTrace.IO`      – Reading NWB/HDF5 files and extracting typed data structures.
-- `NeuroTrace.Viz`     – Plotting functions (spike rasters, signal traces) via CairoMakie.
+- `NeuroTrace.Viz`     – Plotting functions (spike rasters, signal traces) via Plots.jl/GR.
 - `NeuroTrace.Analysis`– Signal-processing utilities (firing rates, filtering, etc.).
 
 # Quick start
