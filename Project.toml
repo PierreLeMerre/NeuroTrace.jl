@@ -13,8 +13,10 @@ ImageFiltering   = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
 # GR is the default backend and is bundled automatically — no separate entry needed.
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 
-# Statistics from the standard library — no UUID needed, always available.
+# Statistics and TOML are Julia standard-library packages.
+# They are always available but must be declared here for the package loader.
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TOML       = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
 # Pin the Julia version range your package supports.

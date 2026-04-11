@@ -1,0 +1,52 @@
+# ============================================================================
+#  NeuroTrace experiment configuration
+#  Loaded by all scripts (Population_heatmap, Explore_data, Unit_raster_psth).
+#  Edit this file to switch experiments — scripts themselves stay untouched.
+# ============================================================================
+
+#── DATA PATH ─────────────────────────────────────────────────────────
+# Path to a single .nwb file  OR  a directory containing multiple .nwb files.
+# When a directory is given, all .nwb files in it are loaded and stacked.
+
+data_path = "/Volumes/MorseSSD/NPX_Database/mPFC/Passive"
+
+# other options
+# data_path = "/Volumes/T7/NWB_Joana/NWB/"   # ← whole folder
+
+#── EVENTS TO PLOT ─────────────────────────────────────────────────────────
+# HDF5 key for the event timestamps used in peri-event analyses.
+
+event_path = "stimulus/presentation/passive_10kHz/timestamps"
+
+# other options
+# event_path = "intervals/trials/start_time"
+# event_path = "intervals/trials/lick_time"
+# event_path = "intervals/trials/imec_stim_on"
+# event_path = "intervals/trials/imec_lick"
+# event_path = "intervals/trials/imec_reward_on"
+# event_path = "intervals/trials/imec_punishment_on"
+# event_path = "intervals/trials/first_move_time"
+# event_path = "intervals/trials/area_entry_time"
+
+# ── PERI-EVENT WINDOW ─────────────────────────────────────────────────────────
+win_start = -1.0    # seconds before event
+win_stop  =  3.0    # seconds after  event
+psth_bin  =  0.01   # bin width (s)
+
+# ── Z-score baseline ──────────────────────────────────────────────────────────
+# All bins where t < baseline_stop are used as the baseline for z-scoring.
+baseline_stop = 0.0
+
+# ── Smoothing and display ─────────────────────────────────────────────────────
+smooth_sigma = 5.0   # Gaussian kernel width in bins (actual time = sigma × psth_bin)
+zlim         = 3.0   # colour saturation for z-scored panels (±σ)
+
+# ── Unit filters ──────────────────────────────────────────────────────────────
+# Minimum mean firing rate to keep a unit (Hz).
+# Computed over the full session duration (first spike → last spike).
+# Set to 0 to disable.
+min_firing_rate = 0.5
+
+# Brain regions to include. Leave empty to include ALL regions.
+# Example: regions = ["SC", "MRN", "PRNr"]
+regions = []

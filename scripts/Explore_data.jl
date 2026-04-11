@@ -5,33 +5,23 @@
 # ============================================================================
 
 # %% ── Configuration (edit before running) ──────────────────────────────────
+# data_path and unit filters come from config.toml.
+# The settings below are specific to the session-overview view.
 
-NWB_FILE   = "/Volumes/T7/NWB_Alicante/NWB/SC19_20250529.nwb"   # ← set this
-
-TIME_IN    = 000.0        # session start to display (s)
-TIME_OUT   = 100.0      # session end   to display (s)
-BIN_SZ     = 0.10       # population firing-rate bin width (s)
+TIME_IN    = 0.0    # session start to display (s)
+TIME_OUT   = 100.0  # session end   to display (s)
+BIN_SZ     = 0.10   # population firing-rate bin width (s)
 
 # Events to overlay on the raster.  Add as many as you need.
 # Each entry is a NamedTuple: (label, path, color).
 # Paths that don't exist in the file are silently skipped.
 EVENTS = [
-    (label="Reward delivery",    path="intervals/trials/rw_start", color=:blue),
-    (label="Trial start",  path="intervals/trials/start_time",color=:black),
+    (label="Reward delivery", path="intervals/trials/rw_start",  color=:blue),
+    (label="Trial start",     path="intervals/trials/start_time", color=:black),
     # (label="Lever press", path="stimulus/presentation/LeverPress/timestamps", color=:blue),
 ]
 
-# One colour per brain region (cycles if there are more regions than colours).
-REGION_COLORS = [
-    "#5A8DAF",   # steel blue
-    "#CE6161",   # red
-    "#4B6A2E",   # dark green
-    "#e5a106",   # amber
-    "#9F453B",   # brick
-    "#92A691",   # sage
-    "#7B5EA7",   # purple
-    "#afd576",   # light green
-]
+# Region colors come from the Allen atlas — no need to specify them manually.
 
 # %% ── Dependencies ──────────────────────────────────────────────────────────
 
@@ -44,168 +34,131 @@ using Plots
 using Statistics
 gr()
 
-# Load the Analysis utilities from the NeuroTrace package
-using NeuroTrace.IO:       read_ragged
+using NeuroTrace.IO:       load_config, load_units, filter_units,
+                           load_atlas, region_display_labels, region_color_map
 using NeuroTrace.Analysis: find_spks_in_window, simple_raster_units,
                            simple_raster, simple_PSTH, _histcount
 
-# %% ── Open NWB file ─────────────────────────────────────────────────────────
+# %% ── Load config, atlas and all sessions ───────────────────────────────────
 
-nwb = h5open(NWB_FILE, "r")
-println("Opened  : ", basename(NWB_FILE))
-println("Keys    : ", join(keys(nwb), ", "))
+cfg       = load_config(joinpath(@__DIR__, "config.toml"))
+atlas     = load_atlas()
+all_units = filter_units(load_units(cfg.data_path), cfg, atlas)
 
-# %% ── Load spike times (NWB ragged / jagged array) ─────────────────────────
-#
-# NWB stores variable-length spike trains as TWO flat arrays:
-#
-#   units/spike_times        – all spike timestamps concatenated
-#   units/spike_times_index  – spike_times_index[i] is the EXCLUSIVE end
-#                              of unit i's data in the flat array.
-#
-# So unit i's spikes live at:
-#   spike_times[ spike_times_index[i-1]+1 : spike_times_index[i] ]
-# with the convention that spike_times_index[0] = 0.
-#
-# This replaces the original pushfirst!/manual-offset approach which
-# accidentally skipped the first spike of unit 1.
+println("$(length(all_units)) session(s) loaded.")
 
-unit_ids  = Int.(read(nwb["units/id"]))
-spk_times = read_ragged(nwb, "units/spike_times", "units/spike_times_index")
-n_units   = length(spk_times)
+# Helper: reconstruct the NWB file path for a given UnitInfo.
+# Works whether cfg.data_path is a single file or a directory.
+_file_path(ui) = isfile(cfg.data_path) ? cfg.data_path :
+                 joinpath(cfg.data_path, ui.session_id)
 
-all_spk   = vcat(spk_times...)
-println("Units   : $n_units")
-println("Total spikes: $(length(all_spk))")
-println("Session duration: $(round(all_spk[end]; digits=1)) s")
+# %% ── Plot one figure per session ───────────────────────────────────────────
 
-# %% ── Electrode regions ─────────────────────────────────────────────────────
+for ui in all_units
 
-ede_labels = String.(read(nwb["general/extracellular_ephys/electrodes/location"]))
-main_ch    = Int.(read(nwb["units/peak_channel_id"])) .+ 1   # 0-based → 1-based
-ede_region = ede_labels[main_ch]
+    spk_times = ui.spike_times
+    n_units   = length(spk_times)
+    all_spk   = vcat(spk_times...)
 
-# Sort units by brain region so same-region units appear together in the raster
-sort_idx    = sortperm(ede_region)
-spk_sorted  = spk_times[sort_idx]
-ylab        = ede_region[sort_idx]          # region label for each row
-pfc_regions = unique(ylab)                  # ordered list of unique regions
+    println("\n── $(ui.session_id) ──")
+    println("Units   : $n_units")
+    println("Total spikes: $(length(all_spk))")
+    println("Session duration: $(round(all_spk[end]; digits=1)) s")
 
-println("Regions : ", join(pfc_regions, ", "))
+    # ── Region sort ──────────────────────────────────────────────────────────
+    disp_labels  = region_display_labels(atlas, ui.regions, cfg.regions)
+    sort_idx     = sortperm(disp_labels)
+    spk_sorted   = spk_times[sort_idx]
+    ylab         = disp_labels[sort_idx]
+    pfc_regions  = unique(ylab)
+    color_map    = region_color_map(atlas, pfc_regions)
+    region_sizes = [count(==(r), ylab) for r in pfc_regions]
+    boundaries   = cumsum(region_sizes)[1:end-1]
 
-# Map each region to a colour (cycle through REGION_COLORS if needed)
-color_map = Dict(r => REGION_COLORS[mod1(i, length(REGION_COLORS))]
-                 for (i, r) in enumerate(pfc_regions))
+    println("Regions : ", join(pfc_regions, ", "))
 
-# Row index boundaries between regions (for separator lines)
-region_sizes = [count(==(r), ylab) for r in pfc_regions]
-boundaries   = cumsum(region_sizes)[1:end-1]   # boundary AFTER each region
-
-# %% ── Event timestamps ──────────────────────────────────────────────────────
-#
-# Load each entry in EVENTS, skipping any path that doesn't exist in the file.
-# `loaded_events` is a Vector of NamedTuples with the same fields as EVENTS
-# plus a `times` field containing the actual timestamps.
-
-loaded_events = map(EVENTS) do ev
-    if haskey(nwb, ev.path)
-        times = Float64.(read(nwb[ev.path]))
-        println("Events  : $(length(times)) × '$(ev.label)'  ($(ev.path))")
-        (label=ev.label, path=ev.path, color=ev.color, times=times)
-    else
-        @warn "Event path not found, skipping: $(ev.path)"
-        nothing
+    # ── Events (open the individual session file) ─────────────────────────────
+    loaded_events = h5open(_file_path(ui), "r") do nwb
+        map(EVENTS) do ev
+            if haskey(nwb, ev.path)
+                times = Float64.(read(nwb[ev.path]))
+                println("Events  : $(length(times)) × '$(ev.label)'")
+                (label=ev.label, path=ev.path, color=ev.color, times=times)
+            else
+                nothing
+            end
+        end |> x -> filter(!isnothing, x)
     end
-end |> x -> filter(!isnothing, x)
 
-# Keep the first event set as the default for peri-event analysis below
-tstart = isempty(loaded_events) ? Float64[] : loaded_events[1].times
+    # ── Session-wide raster ───────────────────────────────────────────────────
+    X, Y = simple_raster_units(spk_sorted, 0.0, TIME_IN, TIME_OUT)
+    Y    = Int.(Y)
 
-# %% ── Session-wide raster ───────────────────────────────────────────────────
-#
-# Pass event_time = 0 and window [TIME_IN, TIME_OUT] so that the centred
-# spike times equal the absolute times — giving us the full-session scatter.
+    # ── Population firing rate ────────────────────────────────────────────────
+    edges    = collect(range(TIME_IN, TIME_OUT; step=BIN_SZ))
+    pop_cnt  = _histcount(X, edges)
+    pop_rate = Float64.(pop_cnt) ./ n_units ./ BIN_SZ
+    timevec  = edges[1:end-1] .+ BIN_SZ / 2
 
-X, Y = simple_raster_units(spk_sorted, 0.0, TIME_IN, TIME_OUT)
-Y    = Int.(Y)
-println("Scatter points: $(length(X))")
+    # ── Panel 1: event markers ────────────────────────────────────────────────
+    event_plt = plot(;
+        title         = ui.session_id,
+        xlims         = (TIME_IN, TIME_OUT),
+        yticks        = false,
+        ylabel        = "events",
+        legend        = :topright,
+        bottom_margin = -2Plots.mm)
 
-# %% ── Population firing rate ────────────────────────────────────────────────
-#
-# Histogram of all spike times in the session window, divided by the number
-# of units and the bin width → mean firing rate per unit in Hz.
+    for ev in loaded_events
+        in_win = filter(t -> TIME_IN ≤ t ≤ TIME_OUT, ev.times)
+        isempty(in_win) && continue
+        vline!(event_plt, [in_win[1]];   color=ev.color, lw=0.6, alpha=0.6, label=ev.label)
+        length(in_win) > 1 &&
+            vline!(event_plt, in_win[2:end]; color=ev.color, lw=0.6, alpha=0.6, label=false)
+    end
 
-edges    = collect(range(TIME_IN, TIME_OUT; step=BIN_SZ))
-pop_cnt  = _histcount(X, edges)
-pop_rate = Float64.(pop_cnt) ./ n_units ./ BIN_SZ
-timevec  = edges[1:end-1] .+ BIN_SZ / 2
+    # ── Panel 2: raster ───────────────────────────────────────────────────────
+    sc = scatter(X, Y;
+        mc                = :black,
+        ms                = 0.8,
+        markerstrokewidth = 0,
+        xlims             = (TIME_IN, TIME_OUT),
+        ylims             = (0.5, n_units + 0.5),
+        yticks            = (1:n_units, ylab),
+        ylabel            = "region",
+        legend            = false)
 
-# %% ── Plot ──────────────────────────────────────────────────────────────────
+    for reg in pfc_regions
+        col     = color_map[reg]
+        row_set = Set(findall(==(reg), ylab))
+        mask    = [yi in row_set for yi in Y]
+        any(mask) || continue
+        scatter!(sc, X[mask], Y[mask]; mc=col, ms=0.8, markerstrokewidth=0, label=false)
+    end
 
-## ── Panel 1: event markers ──
-event_plt = plot(;
-    title         = basename(NWB_FILE),
-    xlims         = (TIME_IN, TIME_OUT),
-    yticks        = false,
-    ylabel        = "events",
-    legend        = :topright,
-    bottom_margin = -2Plots.mm)
+    for b in boundaries
+        hline!(sc, [b + 0.5]; color=:black, lw=1.0, label=false)
+    end
 
-for ev in loaded_events
-    in_win = filter(t -> TIME_IN ≤ t ≤ TIME_OUT, ev.times)
-    isempty(in_win) && continue
-    # Draw the first vline with a label so it appears in the legend;
-    # the rest are unlabelled to avoid a legend entry per timestamp.
-    vline!(event_plt, [in_win[1]];  color=ev.color, lw=0.6, alpha=0.6, label=ev.label)
-    length(in_win) > 1 &&
-        vline!(event_plt, in_win[2:end]; color=ev.color, lw=0.6, alpha=0.6, label=false)
-end
+    # ── Panel 3: population firing rate ───────────────────────────────────────
+    rate_plt = plot(timevec, pop_rate;
+        color       = :black,
+        lw          = 0.8,
+        xlims       = (TIME_IN, TIME_OUT),
+        ylabel      = "spikes/s",
+        xlabel      = "time (s)",
+        legend      = false,
+        top_margin  = -2Plots.mm)
 
-## ── Panel 2: raster ──
-sc = scatter(X, Y;
-    mc               = :black,
-    ms               = 0.8,
-    markerstrokewidth = 0,
-    xlims            = (TIME_IN, TIME_OUT),
-    ylims            = (0.5, n_units + 0.5),
-    yticks           = (1:n_units, ylab),
-    ylabel           = "region",
-    legend           = false)
+    # ── Combine and display ───────────────────────────────────────────────────
+    plt = plot(event_plt, sc, rate_plt;
+        layout = grid(3, 1; heights=[0.06, 0.80, 0.14]),
+        size   = (1200, 800),
+        link   = :x)
 
-# Overlay one scatter series per region for colour (one call per region,
-# not one per unit — much faster for large recordings)
-for (R, reg) in enumerate(pfc_regions)
-    col  = color_map[reg]
-    rows = findall(==(reg), ylab)   # unit-row indices belonging to this region
-    row_set = Set(rows)
-    mask = [yi in row_set for yi in Y]
-    isempty(mask) && continue
-    scatter!(sc, X[mask], Y[mask];
-        mc=col, ms=0.8, markerstrokewidth=0, label=false)
-end
+    display(plt)
 
-# Separator lines between regions
-for b in boundaries
-    hline!(sc, [b + 0.5]; color=:black, lw=1.0, label=false)
-end
+    # Uncomment to save each session figure automatically:
+    # savefig(plt, joinpath(@__DIR__, "$(ui.session_id)_overview.png"))
 
-## ── Panel 3: population firing rate ──
-rate_plt = plot(timevec, pop_rate;
-    color        = :black,
-    lw           = 0.8,
-    xlims        = (TIME_IN, TIME_OUT),
-    ylabel       = "spikes/s",
-    xlabel       = "time (s)",
-    legend       = false,
-    top_margin   = -2Plots.mm)
-
-## ── Combine ──
-plt = plot(event_plt, sc, rate_plt;
-    layout = grid(3, 1; heights=[0.06, 0.80, 0.14]),
-    size   = (1200, 800),
-    link   = :x)      # ← links all three x-axes so zooming one zooms all
-
-display(plt)
-
-# %% ── (Optional) Save figure ────────────────────────────────────────────────
-# savefig(plt, joinpath(@__DIR__, "session_overview.png"))
+end  # for ui in all_units

@@ -8,30 +8,8 @@
 # ============================================================================
 
 # %% ── Configuration ─────────────────────────────────────────────────────────
-
-NWB_FILE   = "/Volumes/T7/NWB_Joana/NWB/999770_20251111_probe01.nwb"
-
-#EVENT_PATH = "intervals/trials/start_time"
-#EVENT_PATH = "intervals/trials/lick_time"
-EVENT_PATH = "intervals/trials/imec_blue_led_on"
-#EVENT_PATH = "intervals/trials/imec_stim_on"
-#EVENT_PATH = "intervals/trials/imec_lick"
-#EVENT_PATH = "intervals/trials/imec_reward_on"
-#EVENT_PATH = "intervals/trials/imec_punishment_on"
-
-#EVENT_PATH = "intervals/trials/first_move_time"
-#EVENT_PATH = "intervals/trials/area_entry_time"
-#EVENT_PATH = "intervals/trials/area_exit_time"
-#EVENT_PATH = "intervals/trials/reward_time"
-#EVENT_PATH = "intervals/trials/distractor"
-
-WIN_START  = -1.0    # window start relative to event (s)
-WIN_STOP   =  3.0    # window stop  relative to event (s)
-PSTH_BIN   =  0.01  # bin width (s)
-
-BASELINE_STOP = 0.0  # z-score baseline: bins where t < this value
-SMOOTH_SIGMA  = 5.0  # Gaussian kernel width in bins (1 bin = PSTH_BIN seconds)
-ZLIM          = 3.0  # colour saturation for z-scored panels (±σ)
+# All parameters live in config.toml (same directory as this script).
+# Edit that file — do not hardcode values here.
 
 # %% ── Dependencies ──────────────────────────────────────────────────────────
 
@@ -39,31 +17,48 @@ import Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
 Pkg.instantiate()
 
-using HDF5
 using Plots
 using Statistics
 gr()
 
-using NeuroTrace.IO:       read_ragged
-using NeuroTrace.Analysis: population_psth, zscore_psth, smooth_psth, peak_sort
+using NeuroTrace.IO:       load_config, load_units, load_events, filter_units,
+                           load_atlas, region_display_labels, region_color_map
+using NeuroTrace.Analysis: population_psth_multi, zscore_psth, smooth_psth, peak_sort
 
-# %% ── Load spike times ───────────────────────────────────────────────────────
+# %% ── Load config ────────────────────────────────────────────────────────────
 
-nwb       = h5open(NWB_FILE, "r")
-spk_times = read_ragged(nwb, "units/spike_times", "units/spike_times_index")
-n_units   = length(spk_times)
-println("Loaded $n_units units")
+cfg = load_config(joinpath(@__DIR__, "config.toml"))
 
-# %% ── Electrode regions ─────────────────────────────────────────────────────
+WIN_START     = cfg.win_start
+WIN_STOP      = cfg.win_stop
+PSTH_BIN      = cfg.psth_bin
+BASELINE_STOP = cfg.baseline_stop
+SMOOTH_SIGMA  = cfg.smooth_sigma
+ZLIM          = cfg.zlim
 
-ede_labels = String.(read(nwb["general/extracellular_ephys/electrodes/location"]))
-main_ch    = Int.(read(nwb["units/peak_channel_id"])) .+ 1
-ede_region = ede_labels[main_ch]
+# %% ── Load atlas, filter units and events ───────────────────────────────────
 
-region_sort  = sortperm(ede_region)
-spk_sorted   = spk_times[region_sort]
-ylab         = ede_region[region_sort]
-pfc_regions  = unique(ylab)
+atlas   = load_atlas()
+units   = filter_units(load_units(cfg.data_path), cfg, atlas)
+events  = load_events(cfg.data_path, cfg.event_path)
+n_units = sum(length(u.spike_times) for u in units)
+
+println("Total units : $n_units across $(length(units)) session(s)")
+
+# %% ── Region sort ────────────────────────────────────────────────────────────
+#
+# raw_regions   – exact labels from NWB (e.g. "ACA1", "ACA2/3")
+# disp_labels   – display labels (e.g. "ACA" when user wrote regions=["ACA"])
+#                 equals raw_regions when cfg.regions is empty
+# color_map     – Dict(display_label => "#RRGGBB") from the Allen atlas
+
+all_raw     = vcat([u.regions for u in units]...)
+disp_labels = region_display_labels(atlas, all_raw, cfg.regions)
+color_map   = region_color_map(atlas, disp_labels)
+
+region_sort = sortperm(disp_labels)
+ylab        = disp_labels[region_sort]
+pfc_regions = unique(ylab)
 
 region_sizes = [count(==(r), ylab) for r in pfc_regions]
 boundaries   = cumsum(region_sizes)
@@ -71,12 +66,6 @@ region_mids  = [div(get(boundaries, i-1, 0) + boundaries[i], 2)
                 for i in eachindex(pfc_regions)]
 
 println("Regions : ", join(pfc_regions, ", "))
-
-# %% ── Load events ────────────────────────────────────────────────────────────
-
-haskey(nwb, EVENT_PATH) || error("Event path not found: $EVENT_PATH")
-event_times = Float64.(read(nwb[EVENT_PATH]))
-println("Events  : $(length(event_times))")
 
 # %% ── Compute + smooth matrices ─────────────────────────────────────────────
 #
@@ -87,8 +76,9 @@ println("Events  : $(length(event_times))")
 #   4. peak_sort        → within-region: sort neurons by peak response time
 
 println("Computing PSTHs …")
-mat_reg, t = population_psth(spk_sorted, event_times, PSTH_BIN, WIN_START, WIN_STOP)
-z_reg      = zscore_psth(mat_reg, t; baseline_stop = BASELINE_STOP)
+mat, t  = population_psth_multi(units, events, PSTH_BIN, WIN_START, WIN_STOP)
+mat_reg = mat[region_sort, :]     # apply region sort (based on display labels)
+z_reg   = zscore_psth(mat_reg, t; baseline_stop = BASELINE_STOP)
 
 println("Smoothing (σ = $SMOOTH_SIGMA bins = $(round(SMOOTH_SIGMA * PSTH_BIN * 1000; digits=1)) ms) …")
 s_mat_reg  = smooth_psth(mat_reg; σ = SMOOTH_SIGMA)
@@ -110,7 +100,7 @@ end
 s_mat_sorted = s_mat_reg[intra_idx, :]
 s_z_sorted   = s_z_reg[intra_idx, :]
 
-println("Done. Matrix: $(size(mat_reg))  (units × bins)")
+println("Done. Matrix: $(size(mat_reg)) (units × bins)")
 
 # %% ── Plot helpers ───────────────────────────────────────────────────────────
 
@@ -150,11 +140,11 @@ _region_lines!(p1_z, boundaries[1:end-1], color=:black)
 #fig_region = plot(p1_raw, p1_z;
 #    layout = grid(1, 2),
 #    size   = (1000, 1500),
-#    plot_title = "Region + peak-sorted  ·  $(basename(NWB_FILE))")
+#    plot_title = "Region + peak-sorted  ·  $(join([u.session_id for u in units], ", "))")
 
 fig_region = plot(p1_z;
     size   = (1000, 1500),
-    plot_title = "Region + peak-sorted  ·  $(basename(NWB_FILE))")
+    plot_title = "Region + peak-sorted  ·  $(join([u.session_id for u in units], ", "))")
 
 
 display(fig_region)

@@ -7,12 +7,13 @@ module Analysis
 
 using Statistics
 using ImageFiltering: imfilter, Kernel
-using ..IO: SpikeUnits, ElectricalSeries
+using ..IO: SpikeUnits, ElectricalSeries, UnitInfo, EventInfo
 
 export firing_rate, bin_spikes,
        find_spks_in_window, simple_raster, simple_raster_units,
        simple_PSTH,
-       population_psth, zscore_psth, peak_sort, smooth_psth
+       population_psth, population_psth_multi,
+       zscore_psth, peak_sort, smooth_psth
 
 # ============================================================================
 # Internal helpers
@@ -247,6 +248,66 @@ function population_psth(spk_times::AbstractVector,
         mat[u, :] = rate
     end
     return mat, bin_centers
+end
+
+"""
+    population_psth_multi(units, events, bin_size, win_start, win_stop)
+        -> (mat::Matrix{Float64}, bin_centers::Vector{Float64})
+
+Multi-session version of `population_psth`.
+
+Accepts a `Vector{UnitInfo}` and a `Vector{EventInfo}` — one element per
+NWB file — matches them by `session_id`, computes a PSTH for each session's
+units against that session's events, and stacks all rows into a single
+`(total_units × n_bins)` matrix.
+
+Row order is session-then-unit (the natural stacking order).  To sort across
+sessions, apply `sortperm` on the merged region labels:
+
+```julia
+all_regions  = vcat([u.regions for u in units]...)
+region_sort  = sortperm(all_regions)
+mat_sorted   = mat[region_sort, :]
+```
+
+Works identically for a single file (length-1 vectors) and for a directory
+full of sessions.
+
+# Example
+```julia
+units  = load_units("/data/SC19/")
+events = load_events("/data/SC19/", "intervals/trials/start_time")
+mat, t = population_psth_multi(units, events, 0.025, -0.5, 1.5)
+```
+"""
+function population_psth_multi(units    ::AbstractVector,
+                                events   ::AbstractVector,
+                                bin_size ::Real,
+                                win_start::Real,
+                                win_stop ::Real)
+
+    # Build session_id → event_times lookup for O(1) matching
+    event_dict = Dict(e.session_id => e.times for e in events)
+
+    rows        = Vector{Vector{Float64}}()
+    bin_centers = Float64[]
+
+    for ui in units
+        ev = get(event_dict, ui.session_id, nothing)
+        isnothing(ev) &&
+            error("No matching EventInfo for session: $(ui.session_id). " *
+                  "Available sessions: $(keys(event_dict))")
+
+        mat, bc = population_psth(ui.spike_times, ev, bin_size, win_start, win_stop)
+        bin_centers = bc
+        for u in axes(mat, 1)
+            push!(rows, mat[u, :])
+        end
+    end
+
+    isempty(rows) && error("No units found across all sessions.")
+    # Stack: each row-vector becomes a 1×n_bins matrix, vcat gives total×n_bins
+    return reduce(vcat, permutedims.(rows)), bin_centers
 end
 
 """
