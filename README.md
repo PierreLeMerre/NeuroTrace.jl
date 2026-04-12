@@ -17,7 +17,7 @@ Get an idea of what data is in your NWB file with a quick overview.
 Plot the raster and the psth of any unit in your NWB file and save the plot as png or svg.
 
 <p align="center">
-    <img src="images/overview.png" hspace="10" >
+    <img src="images/psth_raster.png" hspace="10" >
 </p>
 
 ## Z-scored Heatmap
@@ -25,7 +25,7 @@ Plot the raster and the psth of any unit in your NWB file and save the plot as p
 Get an overview of the z-scored responses of all your units in your NWB file to a particular behavioral timestamp.
 
 <p align="center">
-    <img src="images/overview.png" hspace="10" >
+    <img src="images/heatmap.png" hspace="10" >
 </p>
 
 ## 3D viewer
