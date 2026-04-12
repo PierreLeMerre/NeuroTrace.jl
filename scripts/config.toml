@@ -8,7 +8,7 @@
 # Path to a single .nwb file  OR  a directory containing multiple .nwb files.
 # When a directory is given, all .nwb files in it are loaded and stacked.
 
-data_path = "/Volumes/MorseSSD/NPX_Database/mPFC/Passive"
+data_path = "/Volumes/MorseSSD/NPX_Database/mPFC/Aversion/216300_20200518-probe0.nwb"
 
 # other options
 # data_path = "/Volumes/T7/NWB_Joana/NWB/"   # ← whole folder
@@ -70,8 +70,8 @@ brain_alpha = 0.15
 # ── Figure saving ─────────────────────────────────────────────────────────────
 # Directory where figures are saved.  Leave empty to only display, not save.
 # The directory is created automatically if it doesn't exist.
-# save_path = ""
-save_path = "/Users/pierre/Desktop"
+# save_path = "/Users/pierre/Desktop"
+save_path = ""
 
 # File format for saved figures.  Supported: png, pdf, svg
 save_format = "png"

@@ -8,8 +8,8 @@
 # data_path and unit filters come from config.toml.
 # The settings below are specific to the session-overview view.
 
-TIME_IN    = 0.0    # session start to display (s)
-TIME_OUT   = 100.0  # session end   to display (s)
+TIME_IN    = 100.0    # session start to display (s)
+TIME_OUT   = 150.0  # session end   to display (s)
 BIN_SZ     = 0.10   # population firing-rate bin width (s)
 
 # Events to overlay on the raster.  Add as many as you need.
