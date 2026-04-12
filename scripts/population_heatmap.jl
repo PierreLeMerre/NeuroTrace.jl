@@ -54,7 +54,7 @@ println("Total units : $n_units across $(length(units)) session(s)")
 
 all_raw     = vcat([u.regions for u in units]...)
 disp_labels = region_display_labels(atlas, all_raw, cfg.regions)
-color_map   = region_color_map(atlas, disp_labels)
+color_map   = region_color_map(atlas, disp_labels; custom_colors = cfg.region_colors)
 
 region_sort = sortperm(disp_labels)
 ylab        = disp_labels[region_sort]
@@ -102,6 +102,16 @@ s_z_sorted   = s_z_reg[intra_idx, :]
 
 println("Done. Matrix: $(size(mat_reg)) (units × bins)")
 
+# %% ── Save helper ───────────────────────────────────────────────────────────
+
+function _save(fig, stem)
+    isempty(cfg.save_path) && return
+    mkpath(cfg.save_path)
+    out = joinpath(cfg.save_path, "$(stem).$(cfg.save_format)")
+    savefig(fig, out)
+    println("Saved: $out")
+end
+
 # %% ── Plot helpers ───────────────────────────────────────────────────────────
 
 function _event_line!(p; color=:white)
@@ -148,6 +158,4 @@ fig_region = plot(p1_z;
 
 
 display(fig_region)
-
-# %% ── (Optional) Save ───────────────────────────────────────────────────────
-# savefig(fig_region, joinpath(@__DIR__, "heatmap_region_sorted.png"))
+_save(fig_region, "heatmap_$(replace(cfg.event_path, '/' => '_'))")

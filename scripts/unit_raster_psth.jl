@@ -8,7 +8,7 @@
 # data_path, event_path and unit filters come from config.toml.
 
 SESSION_IDX = 4    # which session to use (1 = first file, 2 = second, …)
-UNIT_IDX    = 101  # row index in the region-sorted, filtered unit list of that session
+UNIT_IDX    = 100  # row index in the region-sorted, filtered unit list of that session
 
 # %% ── Dependencies ──────────────────────────────────────────────────────────
 
@@ -28,6 +28,11 @@ using NeuroTrace.Analysis: simple_raster, simple_PSTH
 
 cfg   = load_config(joinpath(@__DIR__, "config.toml"))
 atlas = load_atlas()
+
+_save(fig, stem) = isempty(cfg.save_path) ? nothing :
+    (mkpath(cfg.save_path);
+     out = joinpath(cfg.save_path, "$(stem).$(cfg.save_format)");
+     savefig(fig, out); println("Saved: $out"))
 
 WIN_START = cfg.win_start
 WIN_STOP  = cfg.win_stop
@@ -53,7 +58,7 @@ event_times = ev.times
 
 # Region color for this unit
 unit_region = ylab[UNIT_IDX]
-unit_color  = region_color_map(atlas, [unit_region])[unit_region]
+unit_color  = region_color_map(atlas, [unit_region]; custom_colors = cfg.region_colors)[unit_region]
 
 println("Session : $(ui.session_id)  ($(SESSION_IDX) / $(length(all_units)))")
 println("Unit    : $UNIT_IDX / $(length(spk_sorted))  →  $unit_region  ($unit_color)")
@@ -97,6 +102,4 @@ plt = plot(rast_plt, psth_plt;
     link   = :x)
 
 display(plt)
-
-# %% ── (Optional) Save ───────────────────────────────────────────────────────
-# savefig(plt, joinpath(@__DIR__, "$(ui.session_id)_unit$(UNIT_IDX)_raster_psth.png"))
+_save(plt, "$(replace(ui.session_id, ".nwb" => ""))_unit$(UNIT_IDX)_$(unit_region)")

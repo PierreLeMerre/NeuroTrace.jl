@@ -288,6 +288,11 @@ from experiment to experiment.
 - `zlim`            – colour saturation for z-scored heatmap panels (±σ).
 - `min_firing_rate` – minimum mean firing rate (Hz) to keep a unit; 0 = no filter.
 - `regions`         – list of region names to keep; empty = keep all regions.
+- `region_colors`   – custom hex colors (`"#RRGGBB"`) for region display; empty = use
+                      Allen atlas colors.  Colors are cycled if fewer than the number
+                      of regions.
+- `save_path`       – directory where figures are saved; empty string = don't save.
+- `save_format`     – file format for saved figures: `"png"`, `"pdf"`, or `"svg"`.
 """
 struct NTConfig
     data_path       :: String
@@ -300,6 +305,9 @@ struct NTConfig
     zlim            :: Float64
     min_firing_rate :: Float64
     regions         :: Vector{String}
+    region_colors   :: Vector{String}
+    save_path       :: String
+    save_format     :: String
 end
 
 """
@@ -336,6 +344,10 @@ function load_config(path::AbstractString)::NTConfig
     haskey(d, "data_path")  || error("config.toml: missing required key 'data_path'")
     haskey(d, "event_path") || error("config.toml: missing required key 'event_path'")
 
+    fmt = lowercase(strip(get(d, "save_format", "png")))
+    fmt in ("png", "pdf", "svg") ||
+        error("config.toml: save_format must be one of: png, pdf, svg (got \"$fmt\")")
+
     return NTConfig(
         d["data_path"],
         d["event_path"],
@@ -347,6 +359,9 @@ function load_config(path::AbstractString)::NTConfig
         Float64(get(d, "zlim",              7.5)),
         Float64(get(d, "min_firing_rate",   0.0)),
         String.(get(d, "regions",           String[])),
+        String.(get(d, "region_colors",     String[])),
+        strip(get(d, "save_path",           "")),
+        fmt,
     )
 end
 

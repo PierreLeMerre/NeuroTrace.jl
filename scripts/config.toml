@@ -49,4 +49,21 @@ min_firing_rate = 0.5
 
 # Brain regions to include. Leave empty to include ALL regions.
 # Example: regions = ["SC", "MRN", "PRNr"]
-regions = []
+regions = ["MOs", "FRP", "ACAd", "ACAv", "PL", "ILA", "ORBm", "ORBvl", "ORBl", "AId", "AIv"]
+
+# ── Region colors ─────────────────────────────────────────────────────────────
+# Custom hex colors for brain region display.
+# Leave empty to use Allen atlas colors (default).
+# If fewer colors than regions, the list is cycled.
+# Example: region_colors = ["#E64B35", "#4DBBD5", "#00A087", "#3C5488"]
+region_colors = ["#92A691", "#4B6A2E", "#D2D3A1", "#B57E46", "#CE6161", "#9F453B", "#5A8DAF", "#3D6884", "#505770", "#BA80B6", "#775B8A"]
+
+
+# ── Figure saving ─────────────────────────────────────────────────────────────
+# Directory where figures are saved.  Leave empty to only display, not save.
+# The directory is created automatically if it doesn't exist.
+# save_path = ""
+save_path = "/Users/pierre/Desktop"
+
+# File format for saved figures.  Supported: png, pdf, svg
+save_format = "png"

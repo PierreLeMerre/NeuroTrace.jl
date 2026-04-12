@@ -45,6 +45,11 @@ cfg       = load_config(joinpath(@__DIR__, "config.toml"))
 atlas     = load_atlas()
 all_units = filter_units(load_units(cfg.data_path), cfg, atlas)
 
+_save(fig, stem) = isempty(cfg.save_path) ? nothing :
+    (mkpath(cfg.save_path);
+     out = joinpath(cfg.save_path, "$(stem).$(cfg.save_format)");
+     savefig(fig, out); println("Saved: $out"))
+
 println("$(length(all_units)) session(s) loaded.")
 
 # Helper: reconstruct the NWB file path for a given UnitInfo.
@@ -71,7 +76,7 @@ for ui in all_units
     spk_sorted   = spk_times[sort_idx]
     ylab         = disp_labels[sort_idx]
     pfc_regions  = unique(ylab)
-    color_map    = region_color_map(atlas, pfc_regions)
+    color_map    = region_color_map(atlas, pfc_regions; custom_colors = cfg.region_colors)
     region_sizes = [count(==(r), ylab) for r in pfc_regions]
     boundaries   = cumsum(region_sizes)[1:end-1]
 
@@ -157,8 +162,6 @@ for ui in all_units
         link   = :x)
 
     display(plt)
-
-    # Uncomment to save each session figure automatically:
-    # savefig(plt, joinpath(@__DIR__, "$(ui.session_id)_overview.png"))
+    _save(plt, "$(replace(ui.session_id, ".nwb" => ""))_overview")
 
 end  # for ui in all_units

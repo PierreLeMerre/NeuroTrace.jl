@@ -160,18 +160,40 @@ function region_display_labels(atlas::RegionAtlas,
 end
 
 """
-    region_color_map(atlas, acronyms) -> Dict{String, String}
+    region_color_map(atlas, acronyms; custom_colors = String[]) -> Dict{String, String}
 
-Return `Dict(acronym => "#RRGGBB")` for each acronym.
-Acronyms not found in the atlas default to `"#808080"` (grey).
+Return `Dict(acronym => "#RRGGBB")` for each unique acronym.
+
+- If `custom_colors` is **empty** (default): colors come from the Allen atlas.
+  Acronyms not found in the atlas default to `"#808080"` (grey).
+- If `custom_colors` is **non-empty**: those hex strings are assigned in order to
+  the unique acronyms (sorted for reproducibility) and **cycled** when there are
+  more regions than colors.
+
+# Example
+```julia
+# Allen atlas colors
+color_map = region_color_map(atlas, pfc_regions)
+
+# Custom palette, cycles if more than 3 regions
+color_map = region_color_map(atlas, pfc_regions;
+                             custom_colors = ["#E64B35", "#4DBBD5", "#00A087"])
+```
 """
 function region_color_map(atlas::RegionAtlas,
-                          acronyms)::Dict{String, String}
-    Dict(acr => begin
-             node = get(atlas.by_acronym, acr, nothing)
-             (isnothing(node) || isempty(node.color)) ? "#808080" : "#" * node.color
-         end
-         for acr in unique(acronyms))
+                          acronyms;
+                          custom_colors::Vector{String} = String[])::Dict{String, String}
+    uniq = unique(acronyms)
+    if isempty(custom_colors)
+        return Dict(acr => begin
+                        node = get(atlas.by_acronym, acr, nothing)
+                        (isnothing(node) || isempty(node.color)) ? "#808080" : "#" * node.color
+                    end
+                    for acr in uniq)
+    else
+        return Dict(acr => custom_colors[mod1(i, length(custom_colors))]
+                    for (i, acr) in enumerate(sort(uniq)))
+    end
 end
 
 # ---------------------------------------------------------------------------
