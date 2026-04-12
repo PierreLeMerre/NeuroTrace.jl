@@ -7,8 +7,8 @@
 # %% ── Configuration ─────────────────────────────────────────────────────────
 # data_path, event_path and unit filters come from config.toml.
 
-SESSION_IDX = 4    # which session to use (1 = first file, 2 = second, …)
-UNIT_IDX    = 100  # row index in the region-sorted, filtered unit list of that session
+SESSION_IDX = 1    # which session to use (1 = first file, 2 = second, …)
+UNIT_IDX    = 150  # row index in the region-sorted, filtered unit list of that session
 
 # %% ── Dependencies ──────────────────────────────────────────────────────────
 

@@ -16,7 +16,7 @@ data_path = "/Volumes/MorseSSD/NPX_Database/mPFC/Aversion/216300_20200518-probe0
 #── EVENTS TO PLOT ─────────────────────────────────────────────────────────
 # HDF5 key for the event timestamps used in peri-event analyses.
 
-event_path = "stimulus/presentation/passive_10kHz/timestamps"
+event_path = "stimulus/presentation/AudStim_10kHz/timestamps"
 
 # other options
 # event_path = "intervals/trials/start_time"
@@ -30,15 +30,15 @@ event_path = "stimulus/presentation/passive_10kHz/timestamps"
 
 # ── PERI-EVENT WINDOW ─────────────────────────────────────────────────────────
 win_start = -1.0    # seconds before event
-win_stop  =  3.0    # seconds after  event
-psth_bin  =  0.01   # bin width (s)
+win_stop  =  2.0    # seconds after  event
+psth_bin  =  0.005   # bin width (s)
 
 # ── Z-score baseline ──────────────────────────────────────────────────────────
 # All bins where t < baseline_stop are used as the baseline for z-scoring.
 baseline_stop = 0.0
 
 # ── Smoothing and display ─────────────────────────────────────────────────────
-smooth_sigma = 5.0   # Gaussian kernel width in bins (actual time = sigma × psth_bin)
+smooth_sigma = 3.0   # Gaussian kernel width in bins (actual time = sigma × psth_bin)
 zlim         = 3.0   # colour saturation for z-scored panels (±σ)
 
 # ── Unit filters ──────────────────────────────────────────────────────────────
