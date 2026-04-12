@@ -17,7 +17,8 @@ export load, read_ragged, NWBSession, SpikeUnits, ElectricalSeries,
        UnitInfo, EventInfo, load_units, load_events, filter_units,
        NTConfig, load_config,
        RegionAtlas, RegionNode, load_atlas, descendants,
-       region_display_labels, region_color_map
+       region_display_labels, region_color_map,
+       ProbeInfo, load_probes
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -90,6 +91,39 @@ Returned (one per file) by `load_events`.
 struct EventInfo
     times      :: Vector{Float64}
     session_id :: String
+end
+
+"""
+    ProbeInfo
+
+Electrode-level geometry for one Neuropixels probe, extracted from the
+`general/extracellular_ephys/electrodes` table.
+
+# Fields
+- `session_id` – source filename (matches `UnitInfo.session_id`).
+- `probe_id`   – electrode-group name (e.g. `"probe0"`, `"imec0"`).
+- `xyz`        – `(n_channels × 3)` matrix of raw electrode coordinates as
+                 stored in the NWB file (x = AP, y = DV, z = ML).
+                 Units depend on the recording pipeline — call `load_probes`
+                 with the appropriate `coord_scale` to convert to CCF µm.
+- `regions`    – per-channel brain-region string (same source as `UnitInfo`).
+
+# Coordinate scaling
+Allen CCF meshes use µm. Common NWB conventions and the scale to apply:
+
+| Pipeline              | NWB unit | coord_scale |
+|-----------------------|----------|-------------|
+| NWB spec (SI)         | meters   | 1e6         |
+| ibllib / ONE          | µm       | 1.0         |
+| Custom mm pipeline    | mm       | 1e3         |
+
+Run `Brain3D.jl` once and check the printed raw coordinate range to confirm.
+"""
+struct ProbeInfo
+    session_id :: String
+    probe_id   :: String
+    xyz        :: Matrix{Float64}   # (n_channels × 3)
+    regions    :: Vector{String}
 end
 
 """
@@ -473,6 +507,35 @@ function load_events(path::AbstractString,
     return [_load_events_file(f, event_key) for f in files]
 end
 
+"""
+    load_probes(path) -> Vector{ProbeInfo}
+
+Extract electrode positions and region labels from one NWB file **or** from
+every `.nwb` file inside a directory.  Returns one `ProbeInfo` per probe
+per file.
+
+Positions are read from `general/extracellular_ephys/electrodes/x`, `y`, `z`
+and are returned **as-is** (no scaling).  Pass the result to `add_probes!`
+with the matching `coord_scale` keyword to convert to CCF µm.
+
+If x/y/z columns are absent the file is silently skipped (an informational
+message is printed), so the function is safe to call on files recorded with
+pipelines that don't write coordinates.
+
+# Example
+```julia
+probes = load_probes(cfg.data_path)
+```
+"""
+function load_probes(path::AbstractString)::Vector{ProbeInfo}
+    files = _nwb_files(path)
+    result = ProbeInfo[]
+    for f in files
+        append!(result, _load_probes_file(f))
+    end
+    return result
+end
+
 # ---------- private helpers -------------------------------------------------
 
 """Return a sorted list of `.nwb` file paths from a file or directory."""
@@ -512,6 +575,84 @@ function _load_events_file(filepath::AbstractString,
         times = Float64.(read(fid[event_key]))
         println("  $(basename(filepath)): $(length(times)) events")
         return EventInfo(times, basename(filepath))
+    end
+end
+
+function _load_probes_file(filepath::AbstractString)::Vector{ProbeInfo}
+    h5open(filepath, "r") do fid
+        grp = fid["general/extracellular_ephys/electrodes"]
+
+        _col(name) = haskey(grp, name) ? Float64.(read(grp[name])) : nothing
+
+        # ── Coordinates ──────────────────────────────────────────────────────
+        # Case 1: AP / DV / ML columns (mm relative to bregma, CCFv3 convention).
+        #   CCF µm = (bregma_voxel + coord_mm × ±100) × 10
+        #   DV is negated: positive anatomy (dorsal) → positive CCF (ventral).
+        #   Bregma in 10 µm CCF voxels: AP=540, DV=65, ML=570
+        ap_raw = _col("AP")
+        dv_raw = _col("DV")
+        ml_raw = _col("ML")
+
+        # Case 2: standard NWB x / y / z columns (units unknown — stored raw).
+        x_raw = _col("x")
+        y_raw = _col("y")
+        z_raw = _col("z")
+
+        local xyz_all::Matrix{Float64}
+
+        if !isnothing(ap_raw) && !isnothing(dv_raw) && !isnothing(ml_raw)
+            bregma_ap, bregma_dv, bregma_ml = 540.0, 65.0, 570.0
+            x_um = (bregma_ap .+ ap_raw .*  100.0) .* 10.0
+            y_um = (bregma_dv .+ dv_raw .* -100.0) .* 10.0
+            z_um = (bregma_ml .+ ml_raw .*  100.0) .* 10.0
+            xyz_all = hcat(x_um, y_um, z_um)
+            println("  $(basename(filepath)): AP/DV/ML (mm) → CCF µm  " *
+                    "(AP=$(round(ap_raw[1],digits=3)) → x=$(round(Int,x_um[1])) µm)")
+
+        elseif !isnothing(x_raw) && !isnothing(y_raw) && !isnothing(z_raw)
+            xyz_all = hcat(x_raw, y_raw, z_raw)
+            println("  $(basename(filepath)): x/y/z columns (raw — units unverified, " *
+                    "x=$(round(x_raw[1],digits=4)))")
+
+        else
+            avail = join(sort(keys(grp)), ", ")
+            error("$(basename(filepath)): no probe coordinate columns found.\n" *
+                  "  Expected: AP+DV+ML  or  x+y+z\n" *
+                  "  Available electrode columns: $avail")
+        end
+
+        # ── Regions ──────────────────────────────────────────────────────────
+        regions_all = String.(read(grp["location"]))
+
+        # ── Probe grouping ────────────────────────────────────────────────────
+        # Try "group_name" first (SpikeInterface convention), then "group".
+        # Fall back to treating the whole file as a single probe.
+        probe_ids = if haskey(grp, "group_name")
+            String.(read(grp["group_name"]))
+        elseif haskey(grp, "group")
+            # "group" stores HDF5 object references — read the referenced name
+            try
+                String.(read(grp["group"]))
+            catch
+                fill("probe0", size(xyz_all, 1))
+            end
+        else
+            fill("probe0", size(xyz_all, 1))
+        end
+
+        # ── Split by probe ────────────────────────────────────────────────────
+        probes = ProbeInfo[]
+        for pid in unique(probe_ids)
+            mask = probe_ids .== pid
+            push!(probes, ProbeInfo(
+                basename(filepath),
+                pid,
+                xyz_all[mask, :],
+                regions_all[mask],
+            ))
+            println("    $pid: $(sum(mask)) channels")
+        end
+        return probes
     end
 end
 
