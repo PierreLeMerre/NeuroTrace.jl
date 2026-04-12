@@ -11,3 +11,27 @@ Get an idea of what data is in your NWB file with a quick overview.
 <p align="center">
     <img src="images/overview.png" hspace="10" >
 </p>
+
+## Quick Raster plot and PSTH
+
+Plot the raster and the psth of any unit in your NWB file and save the plot as png or svg.
+
+<p align="center">
+    <img src="images/overview.png" hspace="10" >
+</p>
+
+## Z-scored Heatmap
+
+Get an overview of the z-scored responses of all your units in your NWB file to a particular behavioral timestamp.
+
+<p align="center">
+    <img src="images/overview.png" hspace="10" >
+</p>
+
+## 3D viewer
+
+Get the position of your probes in the Allen Brain Atlas CCFv3.
+
+<p align="center">
+    <img src="images/3DBrain.png" hspace="10" >
+</p>
