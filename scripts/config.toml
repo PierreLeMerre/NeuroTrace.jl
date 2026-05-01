@@ -8,25 +8,41 @@
 # Path to a single .nwb file  OR  a directory containing multiple .nwb files.
 # When a directory is given, all .nwb files in it are loaded and stacked.
 
-data_path = "/Volumes/MorseSSD/NPX_Database/mPFC/Aversion/216300_20200518-probe0.nwb"
+data_path = "/Volumes/MorseSSD/NPX_Database/frozen_Aversion_Nat_Submission/216300_20200518-probe0.nwb"
 
 # other options
 # data_path = "/Volumes/T7/NWB_Joana/NWB/"   # ← whole folder
 
-#── EVENTS TO PLOT ─────────────────────────────────────────────────────────
-# HDF5 key for the event timestamps used in peri-event analyses.
+#── EVENTS ───────────────────────────────────────────────────────────────────
+# Each [[events]] block defines one event type.
+# Fields:
+#   label  – display name
+#   start  – HDF5 path to start timestamps (alignment point, t = 0)
+#   stop   – HDF5 path to stop timestamps (for duration rectangle in session view)
+#            leave empty ("") or omit if only start is available
+#   color  – named color or hex string (e.g. "black", "#2196F3")
+#
+# Multiple [[events]] blocks → multiple columns in Population_heatmap & Unit_raster_psth.
+# Unit ordering in the heatmap is always derived from the first [[events]] block.
+#
+# Other common start paths (comment/uncomment as needed):
+#   start = "stimulus/presentation/AudStim_10kHz/timestamps"
+#   start = "intervals/trials/lick_time"
+#   start = "intervals/trials/imec_stim_on"
+#   start = "intervals/trials/imec_reward_on"
+#   start = "intervals/trials/first_move_time"
 
-event_path = "stimulus/presentation/AudStim_10kHz/timestamps"
+[[events]]
+label = "Pure Tone"
+start = "stimulus/presentation/AudStim_10kHz/timestamps"
+stop  = "stimulus/presentation/AudStim_10kHz/timestamps"
+color = "#444444"
 
-# other options
-# event_path = "intervals/trials/start_time"
-# event_path = "intervals/trials/lick_time"
-# event_path = "intervals/trials/imec_stim_on"
-# event_path = "intervals/trials/imec_lick"
-# event_path = "intervals/trials/imec_reward_on"
-# event_path = "intervals/trials/imec_punishment_on"
-# event_path = "intervals/trials/first_move_time"
-# event_path = "intervals/trials/area_entry_time"
+[[events]]
+label = "Blue noise"
+start = "stimulus/presentation/passive_bluenoise/timestamps"
+stop  = "stimulus/presentation/passive_bluenoise/timestamps"
+color = "#2196F3"
 
 # ── PERI-EVENT WINDOW ─────────────────────────────────────────────────────────
 win_start = -1.0    # seconds before event
@@ -45,18 +61,19 @@ zlim         = 3.0   # colour saturation for z-scored panels (±σ)
 # Minimum mean firing rate to keep a unit (Hz).
 # Computed over the full session duration (first spike → last spike).
 # Set to 0 to disable.
-min_firing_rate = 0.5
+min_firing_rate = 0.01
 
 # Brain regions to include. Leave empty to include ALL regions.
-# Example: regions = ["SC", "MRN", "PRNr"]
-regions = ["MOs", "FRP", "ACAd", "ACAv", "PL", "ILA", "ORBm", "ORBvl", "ORBl", "AId", "AIv"]
+# Example: regions = [["MOs", "FRP", "ACAd", "ACAv", "PL", "ILA", "ORBm", "ORBvl", "ORBl", "AId", "AIv"]]
+regions = []
 
 # ── Region colors ─────────────────────────────────────────────────────────────
 # Custom hex colors for brain region display.
 # Leave empty to use Allen atlas colors (default).
 # If fewer colors than regions, the list is cycled.
 # Example: region_colors = ["#E64B35", "#4DBBD5", "#00A087", "#3C5488"]
-region_colors = ["#92A691", "#4B6A2E", "#D2D3A1", "#B57E46", "#CE6161", "#9F453B", "#5A8DAF", "#3D6884", "#505770", "#BA80B6", "#775B8A"]
+#region_colors = ["#92A691", "#4B6A2E", "#D2D3A1", "#B57E46", "#CE6161", "#9F453B", "#5A8DAF", "#3D6884", "#505770", "#BA80B6", "#775B8A"]
+region_colors = []
 
 
 # ── 3D brain visualization ────────────────────────────────────────────────────

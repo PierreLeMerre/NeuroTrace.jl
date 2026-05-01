@@ -14,7 +14,7 @@ using Statistics
 using TOML
 
 export load, read_ragged, NWBSession, SpikeUnits, ElectricalSeries,
-       UnitInfo, EventInfo, load_units, load_events, filter_units,
+       UnitInfo, EventInfo, EventSpec, load_units, load_events, filter_units,
        NTConfig, load_config,
        RegionAtlas, RegionNode, load_atlas, descendants,
        region_display_labels, region_color_map,
@@ -75,21 +75,46 @@ Returned (one per file) by `load_units`.
 struct UnitInfo
     spike_times :: Vector{Vector{Float64}}
     regions     :: Vector{String}
+    depths      :: Vector{Float64}   # DV coordinate per unit (mm, from electrode table)
     session_id  :: String
+end
+
+"""
+    EventSpec
+
+Specification for one event type, loaded from `config.toml`.
+
+# Fields
+- `label` – human-readable name (e.g. `"Trial"`, `"Reward"`).
+- `start` – HDF5 path to start timestamps.
+- `stop`  – HDF5 path to stop timestamps; empty string if not available.
+- `color` – color name or hex string for plotting (e.g. `"black"`, `"#2196F3"`).
+"""
+struct EventSpec
+    label :: String
+    start :: String
+    stop  :: String
+    color :: String
 end
 
 """
     EventInfo
 
-Event timestamps from **one** NWB session.
-Returned (one per file) by `load_events`.
+Event timestamps from **one** NWB session for **one** event type.
+Returned (one per file per event type) by `load_events`.
 
 # Fields
-- `times`      – `Vector{Float64}`: event timestamps in seconds.
+- `t_start`    – `Vector{Float64}`: event start timestamps (seconds).
+- `t_stop`     – `Vector{Float64}`: event stop timestamps; `NaN`-filled when no stop path exists.
+- `label`      – `String`: event type label (from `EventSpec`).
+- `color`      – `String`: color for plotting (from `EventSpec`).
 - `session_id` – `String`: source filename, used to match `UnitInfo`.
 """
 struct EventInfo
-    times      :: Vector{Float64}
+    t_start    :: Vector{Float64}
+    t_stop     :: Vector{Float64}
+    label      :: String
+    color      :: String
     session_id :: String
 end
 
@@ -313,9 +338,10 @@ from experiment to experiment.
 
 # Fields
 - `data_path`       – path to a single `.nwb` file or a directory of files.
-- `event_path`      – HDF5 key for the event timestamps (e.g. `"intervals/trials/start_time"`).
-- `win_start`       – peri-event window start (s, relative to event).
-- `win_stop`        – peri-event window stop  (s, relative to event).
+- `events`          – `Vector{EventSpec}`: one entry per event type, defined via
+                      `[[events]]` blocks in `config.toml`.
+- `win_start`       – peri-event window start (s, relative to event start).
+- `win_stop`        – peri-event window stop  (s, relative to event start).
 - `psth_bin`        – PSTH bin width (s).
 - `baseline_stop`   – z-score baseline end (s); all bins before this are baseline.
 - `smooth_sigma`    – Gaussian kernel width for `smooth_psth` (bins).
@@ -330,7 +356,7 @@ from experiment to experiment.
 """
 struct NTConfig
     data_path       :: String
-    event_path      :: String
+    events          :: Vector{EventSpec}
     win_start       :: Float64
     win_stop        :: Float64
     psth_bin        :: Float64
@@ -352,31 +378,57 @@ Missing keys fall back to the defaults shown below.
 
 # Minimal example config.toml
 ```toml
-data_path  = "/data/SC19/"
-event_path = "intervals/trials/start_time"
+data_path = "/data/SC19/"
+
+[[events]]
+label = "Trial"
+start = "intervals/trials/start_time"
+stop  = "intervals/trials/stop_time"
+color = "black"
 ```
 
-# Full example with all keys
+# Backward-compatible: single `event_path` key is accepted and converted to one EventSpec.
+
+# Full example with multiple event types
 ```toml
-data_path       = "/data/SC19/"
-event_path      = "intervals/trials/start_time"
-win_start       = -0.5
-win_stop        =  1.5
-psth_bin        =  0.025
-baseline_stop   =  0.0
-smooth_sigma    =  1.5
-zlim            =  7.5
-min_firing_rate =  0.5    # Hz — set to 0 to disable
-regions         = []      # empty = all regions; e.g. ["SC", "MRN"]
+data_path = "/data/SC19/"
+
+[[events]]
+label = "Trial"
+start = "intervals/trials/start_time"
+stop  = "intervals/trials/stop_time"
+color = "black"
+
+[[events]]
+label = "Reward"
+start = "intervals/trials/rw_start"
+stop  = "intervals/trials/rw_stop"
+color = "#2196F3"
 ```
 """
 function load_config(path::AbstractString)::NTConfig
     isfile(path) || error("Config file not found: $path")
     d = TOML.parsefile(path)
 
-    # Required fields
-    haskey(d, "data_path")  || error("config.toml: missing required key 'data_path'")
-    haskey(d, "event_path") || error("config.toml: missing required key 'event_path'")
+    # Required
+    haskey(d, "data_path") || error("config.toml: missing required key 'data_path'")
+
+    # Events: prefer [[events]] array-of-tables; fall back to legacy event_path key
+    events = EventSpec[]
+    if haskey(d, "events")
+        for ev in d["events"]
+            push!(events, EventSpec(
+                get(ev, "label", "event"),
+                get(ev, "start", ""),
+                get(ev, "stop",  ""),
+                get(ev, "color", "black"),
+            ))
+        end
+    elseif haskey(d, "event_path")
+        push!(events, EventSpec("event", d["event_path"], "", "black"))
+    end
+    isempty(events) &&
+        error("config.toml: no events defined. Add one or more [[events]] blocks.")
 
     fmt = lowercase(strip(get(d, "save_format", "png")))
     fmt in ("png", "pdf", "svg") ||
@@ -384,13 +436,13 @@ function load_config(path::AbstractString)::NTConfig
 
     return NTConfig(
         d["data_path"],
-        d["event_path"],
+        events,
         Float64(get(d, "win_start",        -0.5)),
         Float64(get(d, "win_stop",          1.5)),
         Float64(get(d, "psth_bin",          0.025)),
         Float64(get(d, "baseline_stop",     0.0)),
         Float64(get(d, "smooth_sigma",      1.5)),
-        Float64(get(d, "zlim",              7.5)),
+        Float64(get(d, "zlim",             7.5)),
         Float64(get(d, "min_firing_rate",   0.0)),
         String.(get(d, "regions",           String[])),
         String.(get(d, "region_colors",     String[])),
@@ -451,7 +503,7 @@ function filter_units(units::Vector{UnitInfo};
         n_kept < n &&
             println("  $(ui.session_id): kept $n_kept / $n units after filtering")
 
-        UnitInfo(ui.spike_times[keep], ui.regions[keep], ui.session_id)
+        UnitInfo(ui.spike_times[keep], ui.regions[keep], ui.depths[keep], ui.session_id)
     end
 
     # Drop sessions where every unit was filtered out
@@ -490,21 +542,29 @@ function load_units(path::AbstractString)::Vector{UnitInfo}
 end
 
 """
-    load_events(path, event_key) -> Vector{EventInfo}
+    load_events(path, event_specs) -> Vector{Vector{EventInfo}}
 
-Load event timestamps stored at `event_key` from one NWB file **or** from
-every `.nwb` file inside a directory.  Returns one `EventInfo` per file,
-matched to `UnitInfo` by `session_id` (the basename of the source file).
+Load event timestamps for each `EventSpec` from one NWB file **or** from
+every `.nwb` file inside a directory.
+
+Returns a `Vector{Vector{EventInfo}}` where:
+- outer index = event type (one per `EventSpec`)
+- inner index = session file (one per `.nwb` file)
+
+Each `EventInfo` carries `t_start`, `t_stop` (NaN-filled if no stop path),
+`label`, `color`, and `session_id`.
 
 # Example
 ```julia
-events = load_events("/data/SC19/", "intervals/trials/start_time")
+all_events = load_events("/data/SC19/", cfg.events)
+# all_events[1] → trial-start EventInfo for every session
+# all_events[2] → reward EventInfo for every session
 ```
 """
 function load_events(path::AbstractString,
-                     event_key::AbstractString)::Vector{EventInfo}
+                     event_specs::Vector{EventSpec})::Vector{Vector{EventInfo}}
     files = _nwb_files(path)
-    return [_load_events_file(f, event_key) for f in files]
+    return [[_load_events_file(f, spec) for f in files] for spec in event_specs]
 end
 
 """
@@ -558,23 +618,38 @@ function _load_units_file(filepath::AbstractString)::UnitInfo
     h5open(filepath, "r") do fid
         spk_times  = read_ragged(fid, "units/spike_times",
                                        "units/spike_times_index")
-        ede_labels = String.(read(
-            fid["general/extracellular_ephys/electrodes/location"]))
+        grp        = fid["general/extracellular_ephys/electrodes"]
+        ede_labels = String.(read(grp["location"]))
         main_ch    = Int.(read(fid["units/electrodes"])) .+ 1
         regions    = ede_labels[main_ch]
+
+        # DV depth per unit — try DV column first (mm re bregma), then y (µm or raw)
+        depths = if haskey(grp, "DV")
+            Float64.(read(grp["DV"]))[main_ch]
+        elseif haskey(grp, "y")
+            Float64.(read(grp["y"]))[main_ch]
+        else
+            fill(NaN, length(spk_times))
+        end
+
         println("  $(basename(filepath)): $(length(spk_times)) units")
-        return UnitInfo(spk_times, regions, basename(filepath))
+        return UnitInfo(spk_times, regions, depths, basename(filepath))
     end
 end
 
 function _load_events_file(filepath::AbstractString,
-                            event_key::AbstractString)::EventInfo
+                            spec::EventSpec)::EventInfo
     h5open(filepath, "r") do fid
-        haskey(fid, event_key) ||
-            error("Event key not found in $(basename(filepath)): $event_key")
-        times = Float64.(read(fid[event_key]))
-        println("  $(basename(filepath)): $(length(times)) events")
-        return EventInfo(times, basename(filepath))
+        haskey(fid, spec.start) ||
+            error("Event start key '$(spec.start)' not found in $(basename(filepath))")
+        t_start  = Float64.(read(fid[spec.start]))
+        has_stop = !isempty(spec.stop) && haskey(fid, spec.stop)
+        t_stop   = has_stop ? Float64.(read(fid[spec.stop])) :
+                              fill(NaN, length(t_start))
+        dur_str  = has_stop ?
+            "  median dur=$(round(median(t_stop .- t_start); digits=2))s" : ""
+        println("  $(basename(filepath)): $(length(t_start)) × '$(spec.label)'$dur_str")
+        return EventInfo(t_start, t_stop, spec.label, spec.color, basename(filepath))
     end
 end
 

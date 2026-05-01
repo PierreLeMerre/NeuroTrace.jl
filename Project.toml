@@ -1,33 +1,32 @@
 name = "NeuroTrace"
 uuid = "af4ea4cb-87da-4371-b32e-eabbd0596dfe"
-authors = ["Pierre <pierrepierrepierre.lemerre@gmail.com>"]
 version = "0.1.0"
+authors = ["Pierre <pierrepierrepierre.lemerre@gmail.com>"]
 
 [deps]
-# HDF5.jl: NWB files are HDF5 under the hood. This is the most reliable
-# and actively maintained way to read NWB files in Julia.
-HDF5             = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
-ImageFiltering   = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
+Glob           = "c27321d9-0574-5035-807b-f59d2c89b15c"
+HDF5           = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
+Plots          = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+ProgressMeter  = "92933f4c-e287-5a05-a399-4b506db050ca"
+Statistics     = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TOML           = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+ZetaJu         = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
-# Plots.jl with the GR backend: the most widely used plotting library in Julia.
-# GR is the default backend and is bundled automatically — no separate entry needed.
-Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-
-# Statistics and TOML are Julia standard-library packages.
-# They are always available but must be declared here for the package loader.
-Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-TOML       = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+[sources]
+# ZetaJu is not in the General registry — pinned to the local checkout.
+ZetaJu = {path = "../ZetaJu"}
 
 [compat]
-# Pin the Julia version range your package supports.
-# "1.9" means >=1.9, <2. Adjust upward as Julia releases new versions.
-julia   = "1.9"
+Glob           = "1.4.0"
 HDF5           = "0.17"
 ImageFiltering = "0.7, 0.8, 0.9, 0.10, 0.11, 0.12, 0.13, 0.14, 0.15"
 Plots          = "1"
+ProgressMeter  = "1"
+ZetaJu         = "0.1"
+julia          = "1.9"
 
 [extras]
-# Test-only dependencies go here so they don't pollute user environments.
 Test = "8dfed614-e22c-358f-9f0b-e7d4f03a5885"
 
 [targets]

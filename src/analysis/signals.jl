@@ -7,13 +7,16 @@ module Analysis
 
 using Statistics
 using ImageFiltering: imfilter, Kernel
+using ProgressMeter
+using ZetaJu
 using ..IO: SpikeUnits, ElectricalSeries, UnitInfo, EventInfo
 
 export firing_rate, bin_spikes,
        find_spks_in_window, simple_raster, simple_raster_units,
        simple_PSTH,
        population_psth, population_psth_multi,
-       zscore_psth, peak_sort, smooth_psth
+       zscore_psth, peak_sort, smooth_psth,
+       zeta_pvalues
 
 # ============================================================================
 # Internal helpers
@@ -287,7 +290,7 @@ function population_psth_multi(units    ::AbstractVector,
                                 win_stop ::Real)
 
     # Build session_id → event_times lookup for O(1) matching
-    event_dict = Dict(e.session_id => e.times for e in events)
+    event_dict = Dict(e.session_id => e.t_start for e in events)
 
     rows        = Vector{Vector{Float64}}()
     bin_centers = Float64[]
@@ -400,6 +403,93 @@ function smooth_psth(mat::Matrix{Float64}; σ::Real = 1.0)
     newdata = [Float64.(imfilter(mat[u, :], ker)) for u in axes(mat, 1)]
     # hcat stacks row-vectors as columns → (n_bins × n_units); ' transposes back
     return collect(hcat(newdata...)')
+end
+
+# ============================================================================
+# ZETA test (ZetaJu integration)
+# ============================================================================
+
+"""
+    zeta_pvalues(units, events;
+                 intResampNum = 100,
+                 dblUseMaxDur = nothing)
+        -> (pvals::Vector{Float64}, latencies::Vector{Float64})
+
+Run the ZETA responsiveness test (Montijn et al. 2021) on every unit across
+all sessions and return flat vectors of p-values and peak latencies.
+
+Units and events are matched by `session_id`.  Any unit whose session has no
+matching `EventInfo` is skipped with a warning.  Units for which `zetatest`
+throws (too few spikes, degenerate data, etc.) receive `p = 1.0` and
+`latency = NaN` so the rest of the pipeline is not interrupted.
+
+# Arguments
+- `units`        – `Vector{UnitInfo}` as returned by `load_units` / `filter_units`.
+- `events`       – `Vector{EventInfo}` as returned by `load_events`.
+- `intResampNum` – number of jitter resamplings (default 100; raise for publication).
+- `dblUseMaxDur` – analysis window in seconds (default: min inter-event interval).
+
+# Returns
+- `pvals`     – one p-value per unit, same order as the rows of a population matrix.
+- `latencies` – IFR peak latency (s re event) per unit; `NaN` when unavailable.
+               This is the time of peak instantaneous firing rate (from `dRate["dblLatencyPeak"]`),
+               which is more meaningful for heatmap sorting than the ZETA cumulative-deviation
+               latency (`dblLatencyZETA`), which can be biased toward the end of the trial
+               for tonically responsive units.
+
+# Example
+```julia
+pvals, lats = zeta_pvalues(units, events; intResampNum = 200)
+sig_mask = pvals .< 0.05
+```
+"""
+function zeta_pvalues(units    ::AbstractVector,
+                      events   ::AbstractVector;
+                      intResampNum::Int     = 100,
+                      dblUseMaxDur          = nothing)
+
+    event_dict = Dict(e.session_id => e.t_start for e in events)
+
+    pvals     = Float64[]
+    latencies = Float64[]
+
+    n_total = sum(length(ui.spike_times) for ui in units)
+    prog = Progress(n_total; desc="ZETA tests: ", showspeed=true, color=:cyan)
+
+    for ui in units
+        ev = get(event_dict, ui.session_id, nothing)
+        if isnothing(ev)
+            @warn "zeta_pvalues: no EventInfo for session $(ui.session_id) — skipping."
+            continue
+        end
+
+        ev_f64 = Float64.(ev)   # ev is already Vector{Float64} from event_dict
+
+        for spk in ui.spike_times
+            spk_f64 = Float64.(spk)
+            p, lat = try
+                kwargs = (intResampNum = intResampNum, boolReturnRate = true)
+                if !isnothing(dblUseMaxDur)
+                    kwargs = merge(kwargs, (dblUseMaxDur = Float64(dblUseMaxDur),))
+                end
+                dblZetaP, _, dRate = zetatest(spk_f64, ev_f64; kwargs...)
+                # Use IFR peak latency (instantaneous firing rate peak) rather than
+                # ZETA latency (cumulative deviation peak), which can be biased toward
+                # the end of the trial for tonically responsive units.
+                raw_lat = dRate["dblLatencyPeak"]
+                lat_out = isnothing(raw_lat) ? NaN : Float64(raw_lat)
+                (Float64(dblZetaP), lat_out)
+            catch e
+                @warn "zetatest failed for a unit in $(ui.session_id): $e"
+                (1.0, NaN)
+            end
+            push!(pvals,     p)
+            push!(latencies, lat)
+            next!(prog)
+        end
+    end
+
+    return pvals, latencies
 end
 
 # ============================================================================
