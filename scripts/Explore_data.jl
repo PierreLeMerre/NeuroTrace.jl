@@ -9,8 +9,8 @@
 # Events are defined in config.toml via [[events]] blocks — edit there.
 # The settings below are specific to the session-overview view.
 
-TIME_IN    = 1800.0    # session start to display (s)
-TIME_OUT   = 2500.0   # session end   to display (s)
+TIME_IN    = 0.0    # session start to display (s)
+TIME_OUT   = 2000.0   # session end   to display (s)
 BIN_SZ     = 0.10   # population firing-rate bin width (s)
 
 # Region colors come from the Allen atlas — no need to specify them manually.

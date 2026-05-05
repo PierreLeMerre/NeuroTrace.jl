@@ -41,7 +41,7 @@ SMOOTH_SIGMA  = cfg.smooth_sigma
 ZLIM          = cfg.zlim
 
 # ── ZETA options ──────────────────────────────────────────────────────────────
-USE_ZETA    = true   # false → skip ZETA entirely (faster, keeps all units)
+USE_ZETA    = false   # false → skip ZETA entirely (faster, keeps all units)
 ZETA_ALPHA  = 0.05   # significance threshold for unit filtering
 ZETA_RESAMP = 100    # jitter resamplings (100 = fast / exploratory, 200+ = publication)
 
